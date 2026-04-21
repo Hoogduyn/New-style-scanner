@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BulkSplit - Bulk Property Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.0/proj4.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* {margin:0;padding:0;box-sizing:border-box;}
+
+:root {
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --accent: #007AFF;
+  --bg-primary: #000;
+  --bg-secondary: #1c1c1e;
+  --bg-tertiary: #2c2c2e;
+  --bg-elevated: #3a3a3c;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --border: rgba(255,255,255,0.1);
+  --glass: rgba(28,28,30,0.85);
+  --glass-border: rgba(255,255,255,0.12);
+  --green: #34c759;
+  --yellow: #ff9500;
+  --red: #ff3b30;
+  --blue: #0EA5E9;
+  --green-bg: rgba(52,199,89,0.15);
+  --yellow-bg: rgba(255,149,0,0.15);
+  --blue-bg: rgba(14,165,233,0.15);
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.container {
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+}
+
+.header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.logo {
+  font-size: 18px;
+  font-weight: 900;
+  background: linear-gradient(135deg, var(--accent) 0%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+
+.header-stats {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.stat-card {
+  min-width: 90px;
+  height: 70px;
+  background: linear-gradient(rgba(28,28,30,0.7), rgba(28,28,30,0.7)), linear-gradient(135deg, var(--accent) 0%, rgba(191,90,242,0.7) 100%);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 10px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0,122,255,0.4);
+}
+
+.stat-card.green {
+  background: linear-gradient(rgba(28,28,30,0.7), rgba(28,28,30,0.7)), linear-gradient(135deg, #34c759 0%, #10b981 50%, #059669 100%);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: 0 4px 12px rgba(52,199,89,0.35);
+}
+
+.stat-card.green:hover {
+  box-shadow: 0 8px 24px rgba(52,199,89,0.6);
+}
+
+.stat-card.yellow {
+  background: linear-gradient(rgba(28,28,30,0.7), rgba(28,28,30,0.7)), linear-gradient(135deg, #ff9500 0%, #f59e0b 50%, #d97706 100%);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: 0 4px 12px rgba(255,149,0,0.35);
+}
+
+.stat-card.yellow:hover {
+  box-shadow: 0 8px 24px rgba(255,149,0,0.6);
+}
+
+.stat-card.gray {
+  background: linear-gradient(rgba(28,28,30,0.7), rgba(28,28,30,0.7)), linear-gradient(135deg, #8e8e93 0%, #6b7280 50%, #4b5563 100%);
+  background-origin: padding-box, border-box;
+  background-clip: padding-box, border-box;
+  box-shadow: 0 4px 12px rgba(100,116,139,0.35);
+}
+
+.stat-card.gray:hover {
+  box-shadow: 0 8px 24px rgba(100,116,139,0.6);
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-card.green .stat-value {color: var(--green);}
+.stat-card.yellow .stat-value {color: var(--yellow);}
+.stat-card.gray .stat-value {color: var(--text-tertiary);}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sidebar {
+  width: 240px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.sidebar::-webkit-scrollbar {width: 6px;}
+.sidebar::-webkit-scrollbar-track {background: var(--bg-tertiary);}
+.sidebar::-webkit-scrollbar-thumb {background: var(--bg-elevated); border-radius: 3px;}
+
+.map-container {
+  flex: 1;
+  position: relative;
+  background: var(--bg-primary);
+}
+
+.section {
+  margin-bottom: 14px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.section h2 {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn {
+  width: 100%;
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 9px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0,122,255,0.2);
+}
+
+.btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,122,255,0.3);
+}
+
+.btn:disabled {
+  background: var(--bg-elevated);
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+  box-shadow: none;
+}
+
+.btn-secondary {
+  background: var(--bg-elevated);
+  box-shadow: none;
+  margin-top: 8px;
+}
+
+.btn-secondary:hover {
+  background: #52525b;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+input[type="file"] {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  background: var(--bg-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+input[type="file"]:hover {
+  border-color: var(--accent);
+}
+
+input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 11px;
+  margin-bottom: 8px;
+  transition: border-color 0.2s;
+}
+
+input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,122,255,0.1);
+}
+
+.filter-group {
+  margin-bottom: 12px;
+}
+
+.filter-group label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.filter-value {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+input[type="range"] {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  background: var(--accent);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,122,255,0.3);
+  transition: transform 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  transition: background 0.2s;
+}
+
+.checkbox-group:hover {
+  background: var(--bg-elevated);
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.checkbox-group label {
+  font-size: 11px;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex: 1;
+  font-weight: 500;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+.map-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.map-layer-tabs {
+  display: flex;
+  background: var(--glass);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  gap: 4px;
+}
+
+.map-layer-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  min-width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.map-layer-tab:hover {
+  background: rgba(255,255,255,0.1);
+  transform: scale(1.1);
+}
+
+.map-layer-tab.active {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 0 12px rgba(0,122,255,0.5);
+}
+
+.map-toggle-btn {
+  background: var(--glass);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid var(--glass-border);
+  color: var(--text-primary);
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-toggle-btn:hover {
+  background: var(--bg-elevated);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+}
+
+.map-toggle-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(0,122,255,0.5);
+}
+
+.map-toggle-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.progress {
+  background: var(--bg-primary);
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 10px 0;
+  border: 1px solid var(--border);
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent) 0%, #8b5cf6 100%);
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#log {
+  background: var(--bg-primary);
+  padding: 10px;
+  border-radius: 8px;
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  border: 1px solid var(--border);
+  line-height: 1.4;
+}
+
+#log::-webkit-scrollbar {width: 6px;}
+#log::-webkit-scrollbar-track {background: transparent;}
+#log::-webkit-scrollbar-thumb {background: var(--bg-elevated); border-radius: 3px;}
+
+#log div {
+  padding: 3px 0;
+}
+
+#log div.success {color: var(--green);}
+#log div.error {color: var(--red);}
+#log div.info {color: var(--text-secondary);}
+
+/* Marker glow effects - Starkare som LandSplit */
+.marker-ready {
+  filter: drop-shadow(0 0 12px rgba(52, 199, 89, 0.9)) drop-shadow(0 0 6px rgba(52, 199, 89, 0.6));
+}
+
+.marker-ocr {
+  filter: drop-shadow(0 0 8px rgba(255, 149, 0, 0.8)) drop-shadow(0 0 4px rgba(255, 149, 0, 0.5));
+}
+
+.export-count {
+  display: inline-block;
+  background: var(--green-bg);
+  color: var(--green);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--green);
+}
+
+/* Property Cards */
+.property-cards {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.property-cards::-webkit-scrollbar {width: 4px;}
+.property-cards::-webkit-scrollbar-track {background: transparent;}
+.property-cards::-webkit-scrollbar-thumb {background: var(--bg-elevated); border-radius: 2px;}
+
+.property-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.property-card:hover {
+  background: var(--bg-elevated);
+  border-color: var(--accent);
+  transform: translateX(2px);
+}
+
+.property-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.property-card-details {
+  font-size: 10px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.property-card-highlight {
+  color: var(--green);
+  font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">⚡ BulkSplit</div>
+    <div class="header-stats">
+      <div class="stat-card green" onclick="toggleFilter('green')">
+        <div class="stat-value" id="greenCount">0</div>
+        <div class="stat-label">Delbara</div>
+      </div>
+      <div class="stat-card yellow" onclick="toggleFilter('orange')">
+        <div class="stat-value" id="orangeCount">0</div>
+        <div class="stat-label">Behöver scan</div>
+      </div>
+      <div class="stat-card gray" onclick="toggleFilter('blue')">
+        <div class="stat-value" id="blueCount">0</div>
+        <div class="stat-label">Ingen plan</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    
+    <!-- Sidebar -->
+    <div class="sidebar">
+      
+      <!-- Load GPKG -->
+      <div class="section">
+        <h2>📁 Ladda Fil</h2>
+        <input type="file" id="gpkgFile" accept=".gpkg">
+        <input type="text" id="kommun" placeholder="Kommun (auto-detect)" style="margin-top:10px;">
+      </div>
+
+      <!-- Scan Control -->
+      <div class="section">
+        <h2>⚡ Scanning</h2>
+        <button class="btn" id="scanBtn" onclick="startScan()" disabled>Starta Scanning</button>
+        <button class="btn btn-secondary" onclick="stopScan()">Stoppa</button>
+        <div class="progress">
+          <div class="progress-bar" id="progressBar" style="width:0%"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:8px;text-align:center;" id="progressText">0 / 0</div>
+      </div>
+
+      <!-- Filters -->
+      <div class="section">
+        <h2>🎚️ Filter</h2>
+        
+        <div class="filter-group">
+          <label>
+            <span>Min Area</span>
+            <span class="filter-value" id="minAreaValue">800</span>
+          </label>
+          <input type="range" id="minArea" min="0" max="10000" value="800" step="100" oninput="updateFilters()">
+        </div>
+
+        <div class="filter-group">
+          <label>
+            <span>Max Area</span>
+            <span class="filter-value" id="maxAreaValue">5000</span>
+          </label>
+          <input type="range" id="maxArea" min="0" max="20000" value="5000" step="100" oninput="updateFilters()">
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="showGreen" checked onchange="updateFilters()">
+          <label for="showGreen">🟢 Delbara</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="showOrange" checked onchange="updateFilters()">
+          <label for="showOrange">🟡 Behöver scanning</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="showBlue" onchange="updateFilters()">
+          <label for="showBlue">⚪ Ingen plan</label>
+        </div>
+      </div>
+
+      <!-- Export -->
+      <div class="section">
+        <h2>📤 Export</h2>
+        <div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">
+          Export: <span class="export-count" id="exportCount">0</span> fastigheter
+        </div>
+        <button class="btn" onclick="exportToJSON()">Exportera JSON</button>
+      </div>
+
+      <!-- Top Delbara -->
+      <div class="section" id="topGreenSection" style="display:none;">
+        <h2>🟢 Bästa Delbara</h2>
+        <div class="property-cards" id="topGreenCards"></div>
+      </div>
+
+      <!-- Log -->
+      <div class="section">
+        <h2>📋 Log</h2>
+        <div id="log"></div>
+      </div>
+
+    </div>
+
+    <!-- Map Container -->
+    <div class="map-container">
+      <div id="map"></div>
+      
+      <!-- Map Controls -->
+      <div class="map-controls">
+        <!-- Layer Tabs -->
+        <div class="map-layer-tabs">
+          <button class="map-layer-tab active" id="tab-standard" onclick="switchMapLayer('standard')" title="Standard">☀️</button>
+          <button class="map-layer-tab" id="tab-dark" onclick="switchMapLayer('dark')" title="Dark">🌙</button>
+          <button class="map-layer-tab" id="tab-satellite" onclick="switchMapLayer('satellite')" title="Satellite">🛰️</button>
+        </div>
+        
+        <!-- WMS Toggle -->
+        <button class="map-toggle-btn" id="wms-toggle-btn" onclick="toggleWMS()">
+          <span>📐</span>
+          <span>Gränser</span>
+          <input type="checkbox" class="map-toggle-checkbox" id="wms-checkbox" onclick="event.stopPropagation();">
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// GLOBALS
+// ═══════════════════════════════════════════════════════════
+
+var SQL_READY=false,SQL=null;
+var map=null,markers={};
+var ALL_PROPERTIES=[];
+var CURRENT_INDEX=0,SCAN_RUNNING=false;
+var NGP_TOKEN=null,NGP_TOKEN_EXPIRES=0;
+var SCAN_RESULTS={ready:[],needsOCR:[],noPlan:[]};
+var filters={minArea:800,maxArea:5000,showGreen:true,showOrange:true,showBlue:false};
+
+// WMS Layer variables
+var DP_WMS_URL='https://api.lantmateriet.se/distribution/geodatakatalog/visning/v1/detaljplan/v1/wms';
+var dpLayer=null,wmsOn=false;
+
+// Map layers
+var standardLayer,darkLayer,satelliteLayer;
+var currentBaseLayer=null;
+
+// ═══════════════════════════════════════════════════════════
+// PROJ4 SWEREF99 TM DEFINITIONS
+// ═══════════════════════════════════════════════════════════
+
+proj4.defs('EPSG:3006','+proj=utm +zone=33 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs');
+proj4.defs('EPSG:4326','+proj=longlat +datum=WGS84 +no_defs');
+
+function wgs84ToSweref(lat,lon){
+  var result=proj4('EPSG:4326','EPSG:3006',[lon,lat]);
+  return{E:result[0],N:result[1]};
+}
+
+function swerefToWgs84(E,N){
+  var a=6378137.0,f=1/298.257222101;
+  var e2=2*f-f*f;
+  var n=f/(2-f);
+  var aRoof=a/(1+n)*(1+n*n/4+n*n*n*n/64);
+  var A=e2,B=1,C=0,D=0,E_coef=0;
+  var delta1=n/2-2*n*n/3+37*n*n*n/96-n*n*n*n/360;
+  var delta2=n*n/48+n*n*n/15-437*n*n*n*n/1440;
+  var delta3=17*n*n*n/480-37*n*n*n*n/840;
+  var delta4=4397*n*n*n*n/161280;
+  var Astar=e2+e2*e2+e2*e2*e2+e2*e2*e2*e2;
+  var Bstar=-(7*e2*e2+17*e2*e2*e2+30*e2*e2*e2*e2)/6;
+  var Cstar=(224*e2*e2*e2+889*e2*e2*e2*e2)/120;
+  var Dstar=-(4279*e2*e2*e2*e2)/1260;
+  var lambda0=15*Math.PI/180;
+  var xi=N/aRoof,eta=E/aRoof;
+  var xiPrim=xi-delta1*Math.sin(2*xi)*Math.cosh(2*eta)-delta2*Math.sin(4*xi)*Math.cosh(4*eta)-delta3*Math.sin(6*xi)*Math.cosh(6*eta)-delta4*Math.sin(8*xi)*Math.cosh(8*eta);
+  var etaPrim=eta-delta1*Math.cos(2*xi)*Math.sinh(2*eta)-delta2*Math.cos(4*xi)*Math.sinh(4*eta)-delta3*Math.cos(6*xi)*Math.sinh(6*eta)-delta4*Math.cos(8*xi)*Math.sinh(8*eta);
+  var phiStar=Math.asin(Math.sin(xiPrim)/Math.cosh(etaPrim));
+  var deltaLambda=Math.atan(Math.sinh(etaPrim)/Math.cos(xiPrim));
+  var lonRad=lambda0+deltaLambda;
+  var latRad=phiStar+Astar*Math.sin(2*phiStar)+Bstar*Math.sin(4*phiStar)+Cstar*Math.sin(6*phiStar)+Dstar*Math.sin(8*phiStar);
+  return{lat:latRad*180/Math.PI,lon:lonRad*180/Math.PI};
+}
+
+// ═══════════════════════════════════════════════════════════
+// GEOMETRY FUNCTIONS
+// ═══════════════════════════════════════════════════════════
+
+function parseWKB(buf){
+  if(!buf||buf.byteLength<21){
+    console.warn('[WKB] Buffer too small');
+    return[];
+  }
+  
+  try{
+    var arr=new Uint8Array(buf);
+    
+    // GPKG has a header: 'GP' (0x4750) + flags + srs_id + envelope
+    // Skip to WKB data
+    var offset=0;
+    
+    // Check for GeoPackage Binary header
+    if(arr[0]===0x47&&arr[1]===0x50){ // 'GP'
+      // GPKG header found
+      var flags=arr[3];
+      var envelopeType=(flags>>1)&7; // bits 1-3
+      
+      // Skip: magic(2) + version(1) + flags(1) + srs_id(4) = 8 bytes
+      offset=8;
+      
+      // Skip envelope based on type
+      // 0=no envelope, 1=XY(32), 2=XYZ(48), 3=XYM(48), 4=XYZM(64)
+      var envelopeSizes=[0,32,48,48,64];
+      offset+=envelopeSizes[envelopeType]||0;
+    }
+    
+    var view=new DataView(arr.buffer);
+    var bo=arr[offset];
+    var le=bo===1;
+    var gType=view.getUint32(offset+1,le);
+    
+    // Geometry types: 1=Point, 2=LineString, 3=Polygon, 6=MultiPolygon
+    var baseType=gType%1000;
+    
+    offset+=5; // Skip byte order + geometry type
+    
+    // Handle MultiPolygon
+    if(baseType===6){
+      var numPolygons=view.getUint32(offset,le);
+      offset+=4;
+      // Skip to first polygon (byte order + type)
+      offset+=5;
+    }
+    
+    // Get number of rings (for polygon)
+    if(baseType===3||baseType===6){
+      var numRings=view.getUint32(offset,le);
+      offset+=4;
+    }
+    
+    // Get number of points in first ring
+    if(offset+4>arr.byteLength){
+      console.warn('[WKB] Not enough data for numPts at offset',offset);
+      return[];
+    }
+    
+    var numPts=view.getUint32(offset,le);
+    offset+=4;
+    
+    // Validate we have enough data
+    if(offset+numPts*16>arr.byteLength){
+      console.warn('[WKB] Not enough data for',numPts,'points. Need',offset+numPts*16,'bytes, have',arr.byteLength);
+      return[];
+    }
+    
+    var coords=[];
+    for(var i=0;i<numPts;i++){
+      var x=view.getFloat64(offset,le);
+      var y=view.getFloat64(offset+8,le);
+      var wgs=swerefToWgs84(x,y);
+      coords.push([wgs.lat,wgs.lon]);
+      offset+=16;
+    }
+    return coords;
+  }catch(err){
+    console.error('[WKB] Parse error:',err);
+    return[];
+  }
+}
+
+function calcArea(c){
+  if(!c||c.length<3)return 0;
+  var sum=0;
+  for(var i=0;i<c.length-1;i++){
+    var lat1=c[i][0],lon1=c[i][1];
+    var lat2=c[i+1][0],lon2=c[i+1][1];
+    sum+=lon1*lat2-lon2*lat1;
+  }
+  var areaInDegrees=Math.abs(sum)/2;
+  var avgLat=c[0][0];
+  var latFactor=111320;
+  var lonFactor=111320*Math.cos(avgLat*Math.PI/180);
+  return areaInDegrees*latFactor*lonFactor;
+}
+
+function calcCentroid(coords){
+  if(!coords||coords.length<3)return null;
+  var sumLat=0,sumLon=0;
+  var count=coords.length-1;
+  for(var i=0;i<count;i++){
+    sumLat+=coords[i][0];
+    sumLon+=coords[i][1];
+  }
+  return[sumLat/count,sumLon/count];
+}
+
+function pointInRing(px,py,ring){
+  if(!ring||ring.length<3)return false;
+  var inside=false;
+  for(var i=0,j=ring.length-1;i<ring.length;j=i++){
+    var xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    var intersect=((yi>py)!==(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi)+xi);
+    if(intersect)inside=!inside;
+  }
+  return inside;
+}
+
+function pointInGeometry(px,py,geom){
+  if(!geom)return false;
+  if(geom.type==='Polygon')return pointInRing(px,py,geom.coordinates[0]);
+  if(geom.type==='MultiPolygon')return geom.coordinates.some(function(p){return pointInRing(px,py,p[0])});
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAP INITIALIZATION
+// ═══════════════════════════════════════════════════════════
+
+function initMap(){
+  if(map)return;
+  
+  map=L.map('map',{zoomControl:true}).setView([59.33,18.07],10);
+  
+  // Three base layers (like LandSplit)
+  standardLayer=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+    maxZoom:19,
+    attribution:'© OpenStreetMap © CARTO'
+  });
+  
+  darkLayer=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    maxZoom:19,
+    attribution:'© OpenStreetMap © CARTO'
+  });
+  
+  satelliteLayer=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+    maxZoom:19,
+    attribution:'© Esri'
+  });
+  
+  standardLayer.addTo(map);
+  currentBaseLayer=standardLayer;
+  
+  log('Karta initialiserad','success');
+}
+
+window.switchMapLayer=function(layerType){
+  if(currentBaseLayer){
+    map.removeLayer(currentBaseLayer);
+  }
+  
+  var layers={standard:standardLayer,dark:darkLayer,satellite:satelliteLayer};
+  var newLayer=layers[layerType];
+  
+  if(newLayer){
+    newLayer.addTo(map);
+    currentBaseLayer=newLayer;
+    
+    // Update tab states
+    document.getElementById('tab-standard').classList.toggle('active',layerType==='standard');
+    document.getElementById('tab-dark').classList.toggle('active',layerType==='dark');
+    document.getElementById('tab-satellite').classList.toggle('active',layerType==='satellite');
+    
+    console.log('[MAP] Switched to:',layerType);
+  }
+};
+
+window.toggleWMS=function(){
+  if(!NGP_TOKEN){
+    alert('NGP token saknas! Ladda en fil först.');
+    return;
+  }
+  
+  var btn=document.getElementById('wms-toggle-btn');
+  var checkbox=document.getElementById('wms-checkbox');
+  
+  if(wmsOn&&dpLayer){
+    map.removeLayer(dpLayer);
+    wmsOn=false;
+    btn.classList.remove('active');
+    checkbox.checked=false;
+    console.log('[WMS] Turned OFF');
+  }else{
+    if(!dpLayer){
+      var wmsBase=DP_WMS_URL+'?access_token='+encodeURIComponent(NGP_TOKEN);
+      dpLayer=L.tileLayer.wms(wmsBase,{
+        layers:'detaljplan',
+        format:'image/png',
+        transparent:true,
+        version:'1.1.1',
+        opacity:0.85,
+        tileSize:512,
+        updateWhenIdle:true,
+        minZoom:1,
+        maxZoom:22,
+        attribution:'© Lantmäteriet'
+      });
+    }
+    dpLayer.addTo(map);
+    wmsOn=true;
+    btn.classList.add('active');
+    checkbox.checked=true;
+    console.log('[WMS] Turned ON');
+  }
+};
+
+// ═══════════════════════════════════════════════════════════
+// NGP TOKEN
+// ═══════════════════════════════════════════════════════════
+
+function getNGPToken(cb){
+  if(NGP_TOKEN&&Date.now()<NGP_TOKEN_EXPIRES){
+    cb(NGP_TOKEN);
+    return;
+  }
+  
+  var url='https://api.lantmateriet.se/distribution/geodatakatalog/token/v1/api-tokens:generate';
+  fetch(url,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      apiSubscriptions:[{apiName:'geodatakatalog-detaljplan-v2',apiVersion:'v2'}],
+      minutesToExpire:1440
+    })
+  })
+  .then(function(r){return r.json()})
+  .then(function(data){
+    NGP_TOKEN=data.accessToken;
+    NGP_TOKEN_EXPIRES=Date.now()+(1440*60*1000);
+    log('NGP token hämtad','success');
+    cb(NGP_TOKEN);
+  })
+  .catch(function(err){
+    // Only log once, not every time
+    if(!window.NGP_TOKEN_ERROR_LOGGED){
+      log('⚠️ CORS: NGP API blockerad från GitHub Pages. Kör lokalt (file://) för scanning.','error');
+      window.NGP_TOKEN_ERROR_LOGGED=true;
+    }
+    cb(null);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// NGP SEARCH
+// ═══════════════════════════════════════════════════════════
+
+function extractSizeFromText(txt){
+  var m=txt.match(/(\d+(?:[.,]\d+)?)\s*(?:kvm|m²|kvadratmeter|m2)/i);
+  if(m){
+    var v=parseFloat(m[1].replace(',','.'));
+    if(v>=50&&v<=20000)return v;
+  }
+  return null;
+}
+
+function searchNGP(lat,lon,kommun,cb){
+  getNGPToken(function(token){
+    if(!token){cb(null);return;}
+    
+    var sw=wgs84ToSweref(lat,lon);
+    var d=200;
+    var bbox=(sw.E-d)+','+(sw.N-d)+','+(sw.E+d)+','+(sw.N+d);
+    
+    var dpUrl='https://api.lantmateriet.se/distribution/geodatakatalog/sokning/v1/detaljplan/v2/collections/0'+kommun.padStart(3,'0')+'/items?bbox='+bbox+'&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/3006&limit=200';
+    
+    fetch(dpUrl,{headers:{'Authorization':'Bearer '+token,'Accept':'application/geo+json'}})
+    .then(function(r){return r.json()})
+    .then(function(data){
+      var dpFeatures=data.features||[];
+      
+      if(dpFeatures.length===0){
+        cb(null);
+        return;
+      }
+      
+      var result={};
+      var firstDp=dpFeatures[0].properties||{};
+      result.planNamn=firstDp.planNamn||firstDp.title||(firstDp.detaljplan&&firstDp.detaljplan.namn)||'Detaljplan';
+      
+      var pbUrl='https://api.lantmateriet.se/distribution/geodatakatalog/sokning/v1/detaljplan/v2/collections/0120/items?bbox='+bbox+'&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/3006&limit=200';
+      
+      return fetch(pbUrl,{headers:{'Authorization':'Bearer '+token,'Accept':'application/geo+json'}})
+        .then(function(r2){return r2.json()})
+        .then(function(pbData){
+          var pbFeatures=pbData.features||[];
+          
+          var allTomtRules=[];
+          var debugCount=0;
+          
+          pbFeatures.forEach(function(f){
+            var pb=(f.properties||{}).planbestammelse||(f.properties||{}).egenskapsbestammelse||{};
+            var formulering=pb.bestammelseformulering||'';
+            var fl=formulering.toLowerCase();
+            var isMinTomt=fl.indexOf('tomtplats')!==-1||fl.indexOf('tomtstorlek')!==-1||fl.indexOf('fastighetsstorlek')!==-1||fl.indexOf('minsta tomt')!==-1;
+            
+            if(!isMinTomt)return;
+            
+            var extractedSize=null;
+            var varde=pb.bestammelsevarde;
+            
+            if(varde){
+              var v=null;
+              if(varde.variabelvarde!=null){
+                v=parseFloat(varde.variabelvarde);
+              }else if(Array.isArray(varde)&&varde.length>0&&varde[0].variabelvarde!=null){
+                v=parseFloat(varde[0].variabelvarde);
+              }
+              
+              if(v!=null&&!isNaN(v)&&v>=50&&v<=20000){
+                extractedSize=v;
+              }
+            }
+            
+            if(!extractedSize){
+              extractedSize=extractSizeFromText(formulering);
+            }
+            
+            if(!extractedSize)return;
+            
+            var passedPIP=false;
+            var distance=999999;
+            
+            if(f.geometry&&f.geometry.coordinates&&f.geometry.coordinates.length){
+              passedPIP=pointInGeometry(sw.E,sw.N,f.geometry);
+              
+              var ring=f.geometry.coordinates[0];
+              var minDist=Infinity;
+              for(var vi=0;vi<ring.length;vi++){
+                var dx=ring[vi][0]-sw.E;
+                var dy=ring[vi][1]-sw.N;
+                var dist=Math.sqrt(dx*dx+dy*dy);
+                if(dist<minDist)minDist=dist;
+              }
+              distance=minDist;
+            }
+            
+            if(debugCount<3){
+              console.log('[Bulk] Tomt rule #'+(debugCount+1)+': size='+extractedSize+'m², PIP='+(passedPIP?'✅':'❌')+', dist='+Math.round(distance)+'m');
+              console.log('[Bulk]   Formulering:',formulering.substring(0,100));
+              debugCount++;
+            }
+            
+            allTomtRules.push({
+              size:extractedSize,
+              distance:distance,
+              passedPIP:passedPIP,
+              formulering:formulering
+            });
+          });
+          
+          console.log('[Bulk] Found',allTomtRules.length,'tomt rules total');
+          
+          var rulesInsidePolygon=allTomtRules.filter(function(rule){
+            return rule.passedPIP===true;
+          });
+          
+          console.log('[Bulk] Rules with PIP=✅:',rulesInsidePolygon.length);
+          console.log('[Bulk] Rules with PIP=❌:',(allTomtRules.length-rulesInsidePolygon.length));
+          
+          rulesInsidePolygon.sort(function(a,b){
+            return a.distance-b.distance;
+          });
+          
+          if(rulesInsidePolygon.length>0){
+            result.minSize=rulesInsidePolygon[0].size;
+            console.log('[Bulk] ✅ Selected minSize='+result.minSize+'m² (PIP match)');
+          }else if(allTomtRules.length>0){
+            allTomtRules.sort(function(a,b){return a.distance-b.distance;});
+            var nearest=allTomtRules[0];
+            if(nearest.distance<50){
+              result.minSize=nearest.size;
+              console.log('[Bulk] ⚠️ Selected minSize='+result.minSize+'m² (fallback, dist='+Math.round(nearest.distance)+'m)');
+            }else{
+              console.log('[Bulk] ❌ NO PIP matches and nearest is '+Math.round(nearest.distance)+'m away - minSize=null (needs OCR)');
+            }
+          }else{
+            console.log('[Bulk] ❌ NO tomt rules found - minSize=null');
+          }
+          
+          cb(result);
+        });
+    }).catch(function(){cb(null)});
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// MARKERS
+// ═══════════════════════════════════════════════════════════
+
+function addMarker(prop){
+  if(!map){
+    console.warn('⚠️ Karta inte initialiserad ännu, skippar marker');
+    return;
+  }
+  
+  var settings={
+    ready:{radius:9,fillColor:'#34c759',color:'#fff',weight:2.5,fillOpacity:0.95,className:'marker-ready'},
+    needs_ocr:{radius:7,fillColor:'#ff9500',color:'#fff',weight:2,fillOpacity:0.9,className:'marker-ocr'},
+    no_plan:{radius:5,fillColor:'#8e8e93',color:'#fff',weight:1.5,fillOpacity:0.8,className:'marker-noplan'}
+  };
+  
+  var style=settings[prop.status]||settings.no_plan;
+  var marker=L.circleMarker([prop.lat,prop.lon],style);
+  
+  var popupContent='<b>'+prop.name+'</b><br>Area: '+Math.round(prop.area)+' m²';
+  if(prop.planNamn)popupContent+='<br>Plan: '+prop.planNamn;
+  if(prop.minTomt)popupContent+='<br>Min tomt: '+prop.minTomt+' m²<br>Potential: '+Math.floor(prop.area/prop.minTomt)+' tomter';
+  
+  marker.bindPopup(popupContent);
+  markers[prop.name]={marker:marker,data:prop};
+  marker.addTo(map);
+}
+
+// ═══════════════════════════════════════════════════════════
+// GPKG LOADING
+// ═══════════════════════════════════════════════════════════
+
+window.onload=function(){
+  initSqlJs({locateFile:function(f){return 'https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/'+f}})
+    .then(function(SQLInstance){SQL=SQLInstance;SQL_READY=true;log('SQL.js redo','success')})
+    .catch(function(){log('SQL.js fel','error')});
+  
+  initMap();
+  
+  document.getElementById('gpkgFile').addEventListener('change',function(e){
+    if(e.target.files.length>0){
+      loadGPKG(e.target.files[0]);
+    }
+  });
+};
+
+function log(m,t){
+  var d=document.getElementById('log'),e=document.createElement('div');
+  e.className=t||'info';e.textContent='> '+m;
+  d.appendChild(e);d.scrollTop=d.scrollHeight;
+  console.log(m);
+}
+
+async function loadGPKG(file){
+  if(!SQL_READY){log('SQL.js inte redo','error');return;}
+  
+  log('Läser fil: '+file.name,'info');
+  
+  var arrayBuffer=await file.arrayBuffer();
+  var db=new SQL.Database(new Uint8Array(arrayBuffer));
+  
+  var tables=db.exec("SELECT name FROM sqlite_master WHERE type='table'");
+  if(tables.length===0){log('Inga tabeller hittades','error');return;}
+  
+  var tableName='registerenhetsomradesyta';
+  log('Läser från tabell: '+tableName,'info');
+  
+  var results=db.exec('SELECT * FROM '+tableName+' LIMIT 10000');
+  if(results.length===0){log('Inga rader hittades','error');return;}
+  
+  var cols=results[0].columns;
+  var rows=results[0].values;
+  
+  var nIdx=cols.indexOf('etikett');
+  var gIdx=cols.indexOf('geom');
+  
+  if(nIdx===-1||gIdx===-1){log('Kolumner saknas','error');return;}
+  
+  ALL_PROPERTIES=[];
+  for(var i=0;i<rows.length;i++){
+    if(!rows[i][gIdx])continue;
+    
+    var coords=parseWKB(rows[i][gIdx]);
+    if(coords.length<3)continue;
+    
+    var area=calcArea(coords);
+    var center=calcCentroid(coords);
+    
+    // Skip if centroid is invalid
+    if(!center||isNaN(center[0])||isNaN(center[1])){
+      console.warn('[Load] Invalid centroid for',rows[i][nIdx]);
+      continue;
+    }
+    
+    // Skip if coordinates are way off (not Sweden)
+    if(center[0]<55||center[0]>70||center[1]<10||center[1]<25){
+      console.warn('[Load] Coordinates outside Sweden for',rows[i][nIdx],center);
+      continue;
+    }
+    
+    ALL_PROPERTIES.push({
+      name:rows[i][nIdx]||'Unnamed',
+      area:area,
+      lat:center[0],
+      lon:center[1],
+      status:'pending'
+    });
+  }
+  
+  log('Laddat '+ALL_PROPERTIES.length+' fastigheter','success');
+  
+  // Zoom to show all properties
+  if(ALL_PROPERTIES.length>0){
+    // Calculate bounds
+    var lats=ALL_PROPERTIES.map(function(p){return p.lat});
+    var lons=ALL_PROPERTIES.map(function(p){return p.lon});
+    var minLat=Math.min.apply(null,lats);
+    var maxLat=Math.max.apply(null,lats);
+    var minLon=Math.min.apply(null,lons);
+    var maxLon=Math.max.apply(null,lons);
+    
+    console.log('[Zoom] Bounds: lat['+minLat.toFixed(2)+' - '+maxLat.toFixed(2)+'], lon['+minLon.toFixed(2)+' - '+maxLon.toFixed(2)+']');
+    
+    // Fit bounds with padding
+    map.fitBounds([[minLat,minLon],[maxLat,maxLon]],{padding:[50,50]});
+  }
+  
+  var fnMatch=file.name.match(/(\d{4})/);
+  if(fnMatch){
+    var knr=fnMatch[1];
+    document.getElementById('kommun').value=knr;
+    log('Auto-detected kommun: '+knr,'info');
+  }
+  
+  document.getElementById('scanBtn').disabled=false;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCANNING
+// ═══════════════════════════════════════════════════════════
+
+function startScan(){
+  var knr=document.getElementById('kommun').value.trim();
+  if(!knr){alert('Ange kommun-nummer!');return;}
+  
+  SCAN_RUNNING=true;
+  CURRENT_INDEX=0;
+  SCAN_RESULTS={ready:[],needsOCR:[],noPlan:[]};
+  
+  Object.keys(markers).forEach(function(k){
+    map.removeLayer(markers[k].marker);
+  });
+  markers={};
+  
+  log('Startar scanning av '+ALL_PROPERTIES.length+' fastigheter','info');
+  
+  scanNext();
+}
+
+function scanNext(){
+  if(!SCAN_RUNNING||CURRENT_INDEX>=ALL_PROPERTIES.length){
+    if(CURRENT_INDEX>=ALL_PROPERTIES.length){
+      log('✅ Scanning klar!','success');
+      updateStats();
+    }
+    SCAN_RUNNING=false;
+    return;
+  }
+  
+  var prop=ALL_PROPERTIES[CURRENT_INDEX];
+  var knr=document.getElementById('kommun').value.trim();
+  
+  searchNGP(prop.lat,prop.lon,knr,function(ngpData){
+    if(!ngpData){
+      prop.status='no_plan';
+      SCAN_RESULTS.noPlan.push(prop);
+    }else if(ngpData.minSize){
+      prop.status='ready';
+      prop.planNamn=ngpData.planNamn;
+      prop.minTomt=ngpData.minSize;
+      SCAN_RESULTS.ready.push(prop);
+    }else{
+      prop.status='needs_ocr';
+      prop.planNamn=ngpData.planNamn;
+      SCAN_RESULTS.needsOCR.push(prop);
+    }
+    
+    addMarker(prop);
+    
+    CURRENT_INDEX++;
+    updateProgress();
+    updateFilters();
+    
+    setTimeout(scanNext,150);
+  });
+}
+
+function stopScan(){
+  SCAN_RUNNING=false;
+  log('⏸️ Scanning pausad - '+CURRENT_INDEX+' av '+ALL_PROPERTIES.length+' skannade','warning');
+  updateStats();
+  updateFilters();
+}
+
+function updateProgress(){
+  var pct=Math.floor((CURRENT_INDEX/ALL_PROPERTIES.length)*100);
+  document.getElementById('progressBar').style.width=pct+'%';
+  document.getElementById('progressText').textContent=CURRENT_INDEX+' / '+ALL_PROPERTIES.length;
+}
+
+function updateStats(){
+  document.getElementById('greenCount').textContent=SCAN_RESULTS.ready.length;
+  document.getElementById('orangeCount').textContent=SCAN_RESULTS.needsOCR.length;
+  document.getElementById('blueCount').textContent=SCAN_RESULTS.noPlan.length;
+  
+  // Show top green properties
+  updateTopGreenCards();
+}
+
+function updateTopGreenCards(){
+  var topSection=document.getElementById('topGreenSection');
+  var cardsContainer=document.getElementById('topGreenCards');
+  
+  if(SCAN_RESULTS.ready.length===0){
+    topSection.style.display='none';
+    return;
+  }
+  
+  topSection.style.display='block';
+  
+  // Sort by potential (most tomter)
+  var sorted=SCAN_RESULTS.ready.slice().sort(function(a,b){
+    var potA=Math.floor(a.area/a.minTomt);
+    var potB=Math.floor(b.area/b.minTomt);
+    return potB-potA;
+  });
+  
+  // Show top 5
+  var top5=sorted.slice(0,5);
+  
+  cardsContainer.innerHTML='';
+  top5.forEach(function(prop){
+    var potential=Math.floor(prop.area/prop.minTomt);
+    var card=document.createElement('div');
+    card.className='property-card';
+    card.onclick=function(){
+      map.setView([prop.lat,prop.lon],16);
+      markers[prop.name].marker.openPopup();
+    };
+    
+    card.innerHTML=
+      '<div class="property-card-name">📍 '+prop.name+'</div>'+
+      '<div class="property-card-details">'+
+      Math.round(prop.area)+' m² → <span class="property-card-highlight">'+potential+' tomter</span><br>'+
+      'Min: '+prop.minTomt+' m²'+
+      '</div>';
+    
+    cardsContainer.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// FILTERS
+// ═══════════════════════════════════════════════════════════
+
+window.toggleFilter=function(type){
+  if(type==='green'){
+    var checkbox=document.getElementById('showGreen');
+    checkbox.checked=!checkbox.checked;
+  }else if(type==='orange'){
+    var checkbox=document.getElementById('showOrange');
+    checkbox.checked=!checkbox.checked;
+  }else if(type==='blue'){
+    var checkbox=document.getElementById('showBlue');
+    checkbox.checked=!checkbox.checked;
+  }
+  updateFilters();
+};
+
+function updateFilters(){
+  filters.minArea=parseInt(document.getElementById('minArea').value);
+  filters.maxArea=parseInt(document.getElementById('maxArea').value);
+  filters.showGreen=document.getElementById('showGreen').checked;
+  filters.showOrange=document.getElementById('showOrange').checked;
+  filters.showBlue=document.getElementById('showBlue').checked;
+  
+  document.getElementById('minAreaValue').textContent=filters.minArea;
+  document.getElementById('maxAreaValue').textContent=filters.maxArea;
+  
+  var exportCount=0;
+  Object.keys(markers).forEach(function(name){
+    var m=markers[name];
+    var prop=m.data;
+    
+    if(shouldShowProperty(prop)){
+      m.marker.addTo(map);
+      if(shouldExportProperty(prop))exportCount++;
+    }else{
+      map.removeLayer(m.marker);
+    }
+  });
+  
+  document.getElementById('exportCount').textContent=exportCount;
+}
+
+function shouldShowProperty(prop){
+  var matchesArea=prop.area>=filters.minArea&&prop.area<=filters.maxArea;
+  var matchesStatus=
+    (prop.status==='ready'&&filters.showGreen)||
+    (prop.status==='needs_ocr'&&filters.showOrange)||
+    (prop.status==='no_plan'&&filters.showBlue);
+  return matchesArea&&matchesStatus;
+}
+
+function shouldExportProperty(prop){
+  var matchesArea=prop.area>=filters.minArea&&prop.area<=filters.maxArea;
+  return matchesArea&&(prop.status==='ready'||prop.status==='needs_ocr');
+}
+
+// ═══════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════
+
+function exportToJSON(){
+  var exportData=[];
+  
+  ALL_PROPERTIES.forEach(function(prop){
+    if(shouldExportProperty(prop)){
+      exportData.push({
+        namn:prop.name,
+        area:Math.round(prop.area),
+        lat:prop.lat,
+        lon:prop.lon,
+        status:prop.status,
+        detaljplan:prop.planNamn||null,
+        minTomtstorlek:prop.minTomt||null,
+        potential:prop.minTomt?Math.floor(prop.area/prop.minTomt):null
+      });
+    }
+  });
+  
+  var json=JSON.stringify(exportData,null,2);
+  var blob=new Blob([json],{type:'application/json'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download='bulk-scan-export.json';
+  a.click();
+  
+  log('Exporterade '+exportData.length+' fastigheter','success');
+}
+
+</script>
+
+</body>
+</html>
